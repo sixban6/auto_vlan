@@ -46,13 +46,24 @@ class UciExecutor:
     # 查询 API
     # ----------------------------------------------------------
     def query(self, command: str) -> str | None:
-        """执行 uci 命令并返回输出，dry-run/export 时返回 None"""
-        if self._dry_run or self._export:
+        """执行 uci 命令并返回输出，export 时返回 None"""
+        # Export 模式：完全离线，无法探测
+        if self._export:
             return None
-        result = subprocess.run(
-            f"uci {command}", shell=True, capture_output=True, text=True,
-        )
-        return result.stdout.strip() if result.returncode == 0 else None
+
+        # Dry-run 模式：尝试执行 (read-only)，如果失败则返回 None (Mac 环境)
+        try:
+            result = subprocess.run(
+                f"uci {command}",
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=True  # 确保命令成功才返回结果
+            )
+            return result.stdout.strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # 命令执行失败 (例如命令不存在，或 uci 返回非0)
+            return None
 
     @property
     def is_dry_run(self) -> bool:

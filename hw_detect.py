@@ -57,11 +57,11 @@ def detect_hardware(uci: UciExecutor) -> HardwareInfo:
     """
     自动探测 OpenWrt 硬件信息。
 
-    dry-run 模式下返回 DSA 默认值;
-    运行时通过 uci 命令探测实际配置。
+    export 模式下返回 DSA 默认值;
+    运行时 (含 dry-run) 尝试通过 uci 命令探测实际配置，失败则回退默认值。
     """
-    if uci.is_dry_run:
-        print(">>> [硬件探测] dry-run 模式，使用默认值 (DSA)")
+    if uci.is_export:
+        print(">>> [硬件探测] export 模式，使用默认值 (DSA)")
         return DSA_DEFAULTS
 
     # 1. 优先探测 Swconfig (兼容旧设备/当前配置)
