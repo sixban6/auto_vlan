@@ -208,31 +208,57 @@ class SwconfigBridgeMode(BridgeMode):
 def _resolve_ports(user_ports: list[str], available_ports: list) -> list[tuple[any, bool]]:
     """
     解析用户配置的端口列表。
-    user_ports: ["lan1", "lan2:t"]
-    available_ports: 物理端口列表
+    user_ports: ["lan1", "lan2:t", "eth1", "2"]
+    available_ports: 物理端口列表 (e.g. ["eth1", "eth2"] or [2, 3, 4])
     返回: [(port, is_tagged), ...]
     """
     result = []
     max_idx = len(available_ports)
+    
+    # 建立端口值的快速查找表 (转为 string 用于匹配)
+    avail_str_map = {str(p): p for p in available_ports}
+
     for p in user_ports:
-        # p = "lan1:t" 或 "lan1"
+        # p = "lan1:t" 或 "lan1" 或 "eth1" 或 "2"
         clean_p = p.lower()
         is_tagged = ":t" in clean_p
         
-        # 提取索引部分: "lan1:t" -> "lan1" -> "1"
+        # 提取基础部分: "lan1:t" -> "lan1"
         base = clean_p.split(":")[0]
+
+        # 1. 尝试直接匹配物理端口值 (e.g. "eth1", "2")
+        if base in avail_str_map:
+            result.append((avail_str_map[base], is_tagged))
+            continue
+
+        # 2. 解析 'lanX' 格式
         if base.startswith("lan"):
             try:
-                idx = int(base.replace("lan", "")) - 1
+                num_val = int(base.replace("lan", ""))
+                
+                # 情况 A: 端口是数字 (Swconfig) -> 优先按值匹配 (lan2 -> port 2)
+                # 只有当 available_ports 都是数字时才启用此逻辑
+                if available_ports and isinstance(available_ports[0], int):
+                    if num_val in available_ports:
+                        result.append((num_val, is_tagged))
+                        continue
+                    # 如果按值没找到，是否回退到 index? 
+                    # 比如 lan1 (port 2), 类似 DSA? 
+                    # 用户通常期望 lan2 = port 2. 如果 port 2 不存在, 可能是配置错误.
+                    # 但为了最大兼容性，如果不匹配值，我们可以尝试 index (下面逻辑)
+                
+                # 情况 B: 按索引匹配 (lan1 -> index 0)
+                # 适用于 DSA (lan1 -> eth1) 或 Swconfig 回退
+                idx = num_val - 1
                 if 0 <= idx < max_idx:
                     result.append((available_ports[idx], is_tagged))
                 else:
-                    print(f"    ⚠️  配置警告: {p} 超出可用端口范围 (lan1-lan{max_idx})")
+                    print(f"    ⚠️  配置警告: {p} 超出可用端口范围")
             except ValueError:
                 print(f"    ⚠️  配置警告: 无效端口格式 {p}")
         else:
-            print(f"    ⚠️  配置警告: 端口必须以 'lan' 开头 (如 lan1), 忽略: {p}")
-            
+             print(f"    ⚠️  配置警告: 未知端口 {p} (非物理端口且非 lanX 格式)")
+
     return result
 
 

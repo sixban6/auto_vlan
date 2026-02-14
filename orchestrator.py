@@ -125,53 +125,85 @@ class NetworkOrchestrator:
     def _print_summary(wifi_table: list[WifiInfo]) -> None:
         """打印 WiFi 凭据摘要表"""
         print()
-        print("=" * 55)
+        print("=" * 65)
         print(" 配置完成！请重启网络服务或重启路由器。")
         print(" WiFi 信息如下（请截图保存）:")
-        print("=" * 55)
-        print(f"  {'SSID':<20} | {'Password':<15} | {'Role':<10}")
-        print("  " + "-" * 50)
+        print("=" * 65)
+        print(f"  {'VLAN':<6} | {'SSID':<20} | {'Password':<15} | {'Role':<10}")
+        print("  " + "-" * 60)
         for info in wifi_table:
-            print(f"  {info.ssid:<20} | {info.password:<15} | {info.role:<10}")
-        print("=" * 55)
+            print(f"  {info.vlan_id:<6} | {info.ssid:<20} | {info.password:<15} | {info.role:<10}")
+        print("=" * 65)
 
     def _auto_allocate_ports(self, networks: list[NetworkConfig], hw: HardwareInfo) -> None:
         """
         自动分配物理端口给各个网络 (简单策略: 1对1分配)。
         优先满足前面的网络，剩余端口归属 VLAN 1。
         """
-        total_ports = len(hw.lan_ports)
+        # 获取可用 LAN 端口列表 (已由 hw_detect 排除 WAN 口)
+        # Swconfig: [2, 3, 4] (ints)
+        # DSA: ["eth1", "eth2"] (strs)
+        # 注意: Swconfig 模式下，hw.lan_ports 是空的，需从 switch 信息获取
+        lan_ports = hw.lan_ports
+        if hw.mode == "swconfig" and hw.switch:
+            lan_ports = hw.switch.lan_ports
+        
+        # 复制一份用于分配
+        available_ports = list(lan_ports)
+        total_ports = len(available_ports)
+
         if total_ports == 0:
             print(">>> [Auto Alloc] 无可用物理端口，跳过自动分配")
             return
 
-        # 逻辑端口索引: 1..N (对应 lan1..lanN)
-        available_indices = list(range(1, total_ports + 1))
-        
-        print(f">>> [Auto Alloc] 开始自动端口分配 (可用: {total_ports} 个)")
+        print(f">>> [Auto Alloc] 开始自动端口分配 (可用: {total_ports} 个, 端口: {available_ports})")
 
         # 识别需要分配的网络 (未手动指定 ports 的)
         targets = [net for net in networks if not net.ports]
         
         # 逐个分配
         for net in targets:
-            if not available_indices:
+            if not available_ports:
                 print(f"    - {net.name}: 无可用端口 (WiFi only)")
                 continue
             
-            # 分配一个端口 (Index)
-            idx = available_indices.pop(0)
-            port_name = f"lan{idx}" # 默认 Untagged
+            # 分配一个端口
+            port_val = available_ports.pop(0)
+            
+            # 生成端口名
+            # Swconfig (int): 使用物理端口号 (lan2 -> port 2)
+            if isinstance(port_val, int):
+                port_name = f"lan{port_val}"
+            # DSA (str): 使用逻辑索引 (lan1 -> 第1个可用口)
+            else:
+                # 重新计算其原始索引 (从 lan_ports 中查找)
+                # 其实简单点，直接用 lanN (1-based index) 即可，
+                # 但为了与 debug 脚本一致，我们假设 DSA 下 lan1=eth1
+                try:
+                    idx = lan_ports.index(port_val) + 1
+                    port_name = f"lan{idx}" 
+                except ValueError:
+                    # 理论上不会发生
+                    port_name = f"lan{port_val}" 
+
             net.ports.append(port_name) 
-            print(f"    - {net.name}: 分配 {port_name}")
+            print(f"    - {net.name}: 分配 {port_name} (物理: {port_val})")
 
         # 剩余端口归属 VLAN 1 (lan)
-        if available_indices:
+        if available_ports:
             vlan1_net = next((n for n in networks if n.vlan_id == 1), None)
+            
+            # 生成剩余端口名列表
+            extras = []
+            for p in available_ports:
+                if isinstance(p, int):
+                    extras.append(f"lan{p}")
+                else:
+                    idx = lan_ports.index(p) + 1
+                    extras.append(f"lan{idx}")
+
             if vlan1_net:
-                extras = [f"lan{i}" for i in available_indices]
                 print(f"    - {vlan1_net.name} (VLAN 1): 追加剩余端口 {extras}")
                 vlan1_net.ports.extend(extras)
             else:
-                extras = [f"lan{i}" for i in available_indices]
                 print(f"    - 剩余端口 {extras} 未使用 (未找到 VLAN 1)")

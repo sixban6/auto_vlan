@@ -56,6 +56,7 @@ class WifiInfo:
     ssid: str
     password: str
     role: str
+    vlan_id: int
 
 
 # ------------------------------------------------------------------

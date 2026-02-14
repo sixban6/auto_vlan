@@ -83,7 +83,7 @@ class WiFiConfigurator:
         uci.set("wireless.@wifi-iface[-1].key", password)
         uci.set("wireless.@wifi-iface[-1].network", net.name)
 
-        return WifiInfo(ssid=ssid, password=password, role=net.role)
+        return WifiInfo(ssid=ssid, password=password, role=net.role, vlan_id=net.vlan_id)
 
     @staticmethod
     def _generate_password(length: int = 8) -> str:
