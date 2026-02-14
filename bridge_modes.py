@@ -78,11 +78,27 @@ class DsaBridgeMode(BridgeMode):
         uci.set("network.@bridge-vlan[-1].device", "br-lan")
         uci.set("network.@bridge-vlan[-1].vlan", str(vid))
 
-        # VLAN 1 (默认 LAN)：物理口作为 Untagged 成员
-        # 其他 VLAN 作为纯虚拟接口，等待 WiFi 绑定
-        if vid == 1:
+        # 端口处理逻辑
+        # 1. 如果用户显式指定了端口
+        if net.ports:
+            # ports=['lan1', 'lan2:t'] -> valid ports
+            assignments = _resolve_ports(net.ports, hw.lan_ports)
+            port_list = []
+            for port, tagged in assignments:
+                # DSA 语法: 'eth1' (untagged/pvid), 'eth1:t' (tagged)
+                val = f"{port}:t" if tagged else port
+                port_list.append(val)
+            
+            print(f"    Ports: {port_list}")
+            for p in port_list:
+                uci.add_list("network.@bridge-vlan[-1].ports", p)
+        
+        # 2. 默认行为 (未指定端口)
+        elif vid == 1:
+            # VLAN 1 (默认 LAN)：所有物理口作为 Untagged 成员
             for port in hw.lan_ports:
                 uci.add_list("network.@bridge-vlan[-1].ports", port)
+        # else: 其他 VLAN 默认不绑定物理口 (WiFi only)
 
     def configure_interface(
         self, uci: UciExecutor, net: NetworkConfig
@@ -124,28 +140,52 @@ class SwconfigBridgeMode(BridgeMode):
         uci.set(f"network.{sw.name}.reset", "1")
         uci.set(f"network.{sw.name}.enable_vlan", "1")
 
+        # 保护 WAN 连接: 自动重建 VLAN 2
+        # 前提: WAN 口存在且不等于 CPU 口
+        if sw.wan_port is not None and sw.wan_port != sw.cpu_port:
+             print(f"    [WAN Preservation] 自动重建 VLAN 2 (WAN: {sw.wan_port}, CPU: {sw.cpu_port}t)")
+             uci.add("network", "switch_vlan")
+             uci.set("network.@switch_vlan[-1].device", sw.name)
+             uci.set("network.@switch_vlan[-1].vlan", "2")
+             uci.set("network.@switch_vlan[-1].ports", f"{sw.wan_port} {sw.cpu_port}t")
+
     def configure_vlan(
         self, uci: UciExecutor, net: NetworkConfig, hw: HardwareInfo
     ) -> None:
         sw = self._switch
         vid = net.vlan_id
 
-        # 构建端口列表：CPU 端口始终为 Tagged，LAN 端口视 VLAN 决定
+        # CPU 端口始终为 Tagged
         cpu_port_str = f"{sw.cpu_port}t"
+        ports_str = ""
 
-        if vid == 1:
-            # 默认 LAN VLAN：LAN 物理口为 Untagged 成员
+        # 1. 用户显式指定端口
+        if net.ports:
+            assignments = _resolve_ports(net.ports, sw.lan_ports)
+            p_list = []
+            for port, tagged in assignments:
+                # Swconfig 语法: '1' (untagged), '1t' (tagged)
+                val = f"{port}t" if tagged else str(port)
+                p_list.append(val)
+            
+            # 组合: 用户指定端口 + CPU
+            ports_str = " ".join(p_list) + f" {cpu_port_str}"
+            print(f"    Ports: {p_list} + CPU")
+
+        # 2. 默认行为
+        elif vid == 1:
+            # 默认 LAN VLAN：所有 LAN 口 Untagged + CPU Tagged
             lan_ports_str = " ".join(str(p) for p in sw.lan_ports)
-            ports = f"{lan_ports_str} {cpu_port_str}"
+            ports_str = f"{lan_ports_str} {cpu_port_str}"
         else:
-            # 其他 VLAN：仅 CPU 端口（Tagged），等待 WiFi 绑定
-            ports = cpu_port_str
+            # 其他 VLAN：仅 CPU 端口
+            ports_str = cpu_port_str
 
-        print(f"  [Switch-VLAN/Swconfig] VLAN {vid}, 端口: {ports}")
+        print(f"  [Switch-VLAN/Swconfig] VLAN {vid}, 端口: {ports_str}")
         uci.add("network", "switch_vlan")
         uci.set("network.@switch_vlan[-1].device", sw.name)
         uci.set("network.@switch_vlan[-1].vlan", str(vid))
-        uci.set("network.@switch_vlan[-1].ports", ports)
+        uci.set("network.@switch_vlan[-1].ports", ports_str)
 
     def configure_interface(
         self, uci: UciExecutor, net: NetworkConfig
@@ -160,6 +200,40 @@ class SwconfigBridgeMode(BridgeMode):
         uci.set(f"network.{name}.proto", "static")
         uci.set(f"network.{name}.ipaddr", net.subnet)
         uci.set(f"network.{name}.netmask", net.netmask)
+
+
+# ================================================================
+# 辅助函数
+# ================================================================
+def _resolve_ports(user_ports: list[str], available_ports: list) -> list[tuple[any, bool]]:
+    """
+    解析用户配置的端口列表。
+    user_ports: ["lan1", "lan2:t"]
+    available_ports: 物理端口列表
+    返回: [(port, is_tagged), ...]
+    """
+    result = []
+    max_idx = len(available_ports)
+    for p in user_ports:
+        # p = "lan1:t" 或 "lan1"
+        clean_p = p.lower()
+        is_tagged = ":t" in clean_p
+        
+        # 提取索引部分: "lan1:t" -> "lan1" -> "1"
+        base = clean_p.split(":")[0]
+        if base.startswith("lan"):
+            try:
+                idx = int(base.replace("lan", "")) - 1
+                if 0 <= idx < max_idx:
+                    result.append((available_ports[idx], is_tagged))
+                else:
+                    print(f"    ⚠️  配置警告: {p} 超出可用端口范围 (lan1-lan{max_idx})")
+            except ValueError:
+                print(f"    ⚠️  配置警告: 无效端口格式 {p}")
+        else:
+            print(f"    ⚠️  配置警告: 端口必须以 'lan' 开头 (如 lan1), 忽略: {p}")
+            
+    return result
 
 
 # ================================================================

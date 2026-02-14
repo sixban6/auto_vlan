@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -34,6 +34,7 @@ class NetworkConfig:
     netmask: str    # 如 "255.255.255.0"
     alias: str = ""
     wifi: Optional[WifiConfig] = None
+    ports: list[str] = field(default_factory=list)  # 可选: 物理端口绑定 (lan1, lan2:t)
 
 
 # ------------------------------------------------------------------
@@ -66,13 +67,13 @@ def parse_config(raw: dict) -> tuple[Optional[ProxyConfig], list[NetworkConfig]]
 
     极简配置示例:
         proxy:
-          side_router_ip: "192.168.1.2"
+            side_router_ip: "192.168.1.2"
         networks:
-          - name: "lan"
+            - name: "lan"
             vlan_id: 1
             role: "proxy"
             wifi:
-              ssid: "Youtube"
+                ssid: "Youtube"
     """
     # --- proxy 配置 (可选) ---
     proxy_cfg = None
@@ -100,6 +101,7 @@ def parse_config(raw: dict) -> tuple[Optional[ProxyConfig], list[NetworkConfig]]
         subnet = entry.get("subnet", f"192.168.{vlan_id}.1")
         netmask = entry.get("netmask", "255.255.255.0")
         alias = entry.get("alias", entry["name"])
+        ports = entry.get("ports", [])
 
         wifi = None
         if "wifi" in entry:
@@ -118,6 +120,7 @@ def parse_config(raw: dict) -> tuple[Optional[ProxyConfig], list[NetworkConfig]]
                 netmask=netmask,
                 alias=alias,
                 wifi=wifi,
+                ports=ports,
             )
         )
 
