@@ -191,17 +191,22 @@ def _detect_swconfig(uci: UciExecutor) -> HardwareInfo:
                     pass
 
     # 尝试 CLI 探测硬件所有端口 (解决"只配置了1个口导致只探测到1个口"的问题)
-    hw_ports = _detect_swconfig_ports_from_cli(uci, switch_name)
-    if hw_ports:
-        print(f"    [CLI] 硬件端口列表: {hw_ports}")
-        # 如果 CLI 探测成功，使用 (Hardware - CPU - WAN) 作为 LAN 列表
-        potential_lan = []
-        for p in hw_ports:
-            if p != cpu_port and p != wan_port:
-                potential_lan.append(p)
-        
-        if potential_lan:
-            lan_ports = potential_lan
+    # 修复: 如果 UCI 已经配置了多个端口 (>=2)，则信任 UCI，不再使用 CLI 探测覆盖
+    # 避免 CLI 探测出 ghost ports (物理不存在但 switch 芯片支持的端口)
+    if len(lan_ports) <= 1:
+        hw_ports = _detect_swconfig_ports_from_cli(uci, switch_name)
+        if hw_ports:
+            print(f"    [CLI] 硬件端口列表: {hw_ports}")
+            # 如果 CLI 探测成功，使用 (Hardware - CPU - WAN) 作为 LAN 列表
+            potential_lan = []
+            for p in hw_ports:
+                if p != cpu_port and p != wan_port:
+                    potential_lan.append(p)
+            
+            if potential_lan:
+                lan_ports = potential_lan
+    else:
+        print(f"    [UCI] 已配置 {len(lan_ports)} 个 LAN 端口，跳过 CLI 探测 (避免 ghost ports)")
     
     # 默认值兜底
     if not lan_ports:
