@@ -5,7 +5,7 @@
 # 代理配置 (仅在需要旁路由翻墙时填写)
 proxy:
   side_router_ip: "192.168.1.2"   # 旁路由 IP
-  # proxy_dhcp_mode: "main"       # 可选: main(默认) / side
+  proxy_dhcp_mode: "main"       # 可选: main(默认) / side
 
 # 网络规划
 # - subnet 默认从 vlan_id 推导: 192.168.{vlan_id}.1

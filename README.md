@@ -67,8 +67,13 @@ networks:
 ```
 
 ### 2. 试运行（推荐先执行）
-
 ```bash
+opkg update
+opkg install git-http
+opkg install python3
+opkg install python3-yaml
+git clone https://github.com/sixban6/auto_vlan.git
+cd auto_vlan
 python3 setup_network.py --dry-run
 ```
 
