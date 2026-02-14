@@ -31,43 +31,39 @@
 修改 `network_plan.yaml`，按需规划你的网络：
 
 ```yaml
-hardware:
-  wan_interface: "eth0"
-  lan_ports: ["eth1", "eth2"]
+# === OpenWrt 网络规划 ===
+# 只需编辑此文件，然后运行 python3 setup_network.py
+# 硬件信息（WAN/LAN/switch）由程序自动探测，无需手动配置
 
-  # Swconfig 路由器需要额外配置 (DSA 路由器可忽略):
-  # switch:
-  #   name: "switch0"
-  #   cpu_port: 0
-  #   cpu_interface: "eth0"
-  #   lan_ports: [1, 2, 3, 4]
-  #   wan_port: 5
+# 代理配置 (仅在需要旁路由翻墙时填写)
+proxy:
+  side_router_ip: "192.168.1.2"   # 旁路由 IP
+  # proxy_dhcp_mode: "main"       # 可选: main(默认) / side
 
-global:
-  main_router_ip: "192.168.1.1"
-  side_router_ip: "192.168.1.2"
-  proxy_dhcp_mode: "main"   # "main" 或 "side"
-
+# 网络规划
+# - subnet 默认从 vlan_id 推导: 192.168.{vlan_id}.1
+# - netmask 默认: 255.255.255.0
+# - wifi.password 不写则自动生成
 networks:
   - name: "lan"
-    alias: "Proxy-Net"
     vlan_id: 1
-    subnet: "192.168.1.1"
-    netmask: "255.255.255.0"
-    role: "proxy"
+    role: "proxy"          # proxy=翻墙 | clean=纯净 | isolate=隔离
     wifi:
       ssid: "Youtube"
-      password: "auto_generate"
 
   - name: "home"
-    alias: "Home-Pure"
     vlan_id: 5
-    subnet: "192.168.5.1"
-    netmask: "255.255.255.0"
     role: "clean"
     wifi:
-      ssid: "MyHome"
-      password: "my_password"
+      ssid: "home"
+      password: "12345678"
+
+  - name: "iot"
+    vlan_id: 3
+    role: "isolate"
+    subnet: "192.168.10.1"
+    wifi:
+      ssid: "IoT-Smart"
 ```
 
 ### 2. 试运行（推荐先执行）
