@@ -64,18 +64,32 @@ def detect_hardware(uci: UciExecutor) -> HardwareInfo:
         print(">>> [硬件探测] dry-run 模式，使用默认值 (DSA)")
         return DSA_DEFAULTS
 
-    # 1. 判断桥接模式
+    # 1. 优先探测 Swconfig (兼容旧设备/当前配置)
+    # 用户反馈：某些双支持设备配置为 switch 时，脚本误判为 DSA
     is_swconfig = _detect_is_swconfig(uci)
-
     if is_swconfig:
         return _detect_swconfig(uci)
-    else:
+
+    # 2. 探测 DSA
+    is_dsa = _detect_is_dsa_config(uci)
+    if is_dsa:
         return _detect_dsa(uci)
+
+    # 3. 默认回退到 DSA (假定为现代设备或无配置)
+    print(">>> [硬件探测] 未检测到明确配置，默认使用 DSA 模式")
+    return _detect_dsa(uci)
 
 
 def _detect_is_swconfig(uci: UciExecutor) -> bool:
-    """检测是否为 swconfig 模式"""
-    result = uci.query("show network | grep '@switch\\[0\\]'")
+    """检测是否为 swconfig 模式 (检查是否存在 switch section)"""
+    # 匹配 network.@switch[0]=switch 或 network.switch0=switch
+    result = uci.query("show network | grep '=switch'")
+    return bool(result)
+
+
+def _detect_is_dsa_config(uci: UciExecutor) -> bool:
+    """检测是否为 DSA 模式 (检查是否存在 bridge-vlan section)"""
+    result = uci.query("show network | grep '=bridge-vlan'")
     return bool(result)
 
 
