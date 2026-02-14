@@ -108,6 +108,7 @@ def _detect_dsa(uci: UciExecutor) -> HardwareInfo:
 
     # LAN 端口: 从 br-lan 的 ports 列表获取
     lan_ports = _detect_dsa_lan_ports(uci)
+    lan_ports.sort()
     print(f"    LAN 端口: {lan_ports}")
 
     return HardwareInfo(
@@ -218,6 +219,8 @@ def _detect_swconfig(uci: UciExecutor) -> HardwareInfo:
     # 提取基础接口名 (去掉 .VID 后缀)
     if "." in cpu_interface:
         cpu_interface = cpu_interface.split(".")[0]
+
+    lan_ports.sort()
 
     switch_info = SwitchInfo(
         name=switch_name,
