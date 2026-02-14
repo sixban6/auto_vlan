@@ -19,10 +19,8 @@
 - **OCP 架构** — 新增网络角色或桥接模式，无需修改已有代码
 
 ## 📋 前提条件
-
 - OpenWrt 路由器（DSA 或 Swconfig 均可）
 - Python 3.10+
-- PyYAML（`pip install pyyaml`）
 
 ## 🚀 快速开始
 
